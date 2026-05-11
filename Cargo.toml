@@ -7,8 +7,16 @@ edition = "2021"
 name = "search"
 path = "src/search/main.rs"
 
+[dependencies]
+# Untuk mengambil data dari internet
+reqwest = { version = "0.11", features = ["blocking", "rustls-tls"] }
+# Untuk scraping hasil pencarian dari HTML
+scraper = "0.17"
+# (Opsional) Jika ingin output JSON
+serde_json = "1.0"
+
 [profile.release]
 opt-level = 3
 strip = true
 lto = true
-
+codegen-units = 1
