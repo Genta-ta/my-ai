@@ -28,15 +28,36 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    # 1. Cache untuk package APT (toolchain)
+    - name: Cache apt
+      uses: actions/cache@v4
+      with:
+        path: /var/cache/apt/archives
+        key: apt-${{ matrix.arch }}-${{ hashFiles('.github/workflows/*.yml') }}
+        restore-keys: apt-${{ matrix.arch }}-
+
     - name: Install toolchain
       run: |
         sudo apt update -qq
         sudo apt install -y ${{ matrix.pkg }} musl-tools
 
+    # 2. Cache untuk Rust (Cargo & Target)
+    # Ini yang paling penting supaya compile Rust gak makan waktu 10 menit tiap push
+    - name: Cache Rust
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target/
+        # Menggunakan Cargo.toml sebagai kunci, jika tidak ada perubahan dependency, cache dipakai
+        key: rust-${{ matrix.arch }}-${{ hashFiles('**/Cargo.toml') }}
+        restore-keys: |
+          rust-${{ matrix.arch }}-
+
     - name: Download llama.cpp b9101
       run: |
         mkdir -p bin llama-bin /tmp/llama-extract
-        # Gunakan cache manual atau download jika tidak ada
         if [ -f "llama-bin/llama-cli" ]; then
           cp llama-bin/llama-cli bin/llama-cli
         else
@@ -67,12 +88,12 @@ jobs:
     - name: Build C server
       run: |
         mkdir -p bin
-        ${{ matrix.cc }} -O3 -static -o bin/ai-server src/server/main.c -lpthread || echo "C build failed"
+        ${{ matrix.cc }} -O3 -static -o bin/ai-server src/server/main.c -lpthread
 
     - name: Build Rust search
       run: |
         cargo build --release --target ${{ matrix.rust_target }}
-        cp target/${{ matrix.rust_target }}/release/search bin/search || cp target/release/search bin/search || echo "Rust build failed"
+        cp target/${{ matrix.rust_target }}/release/search bin/search
 
     - name: Verify
       run: |
