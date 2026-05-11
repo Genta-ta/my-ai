@@ -6,3 +6,9 @@ edition = "2021"
 [[bin]]
 name = "search"
 path = "src/search/main.rs"
+
+[profile.release]
+opt-level = 3
+strip = true
+lto = true
+

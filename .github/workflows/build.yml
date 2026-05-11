@@ -10,10 +10,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install ARM64 toolchain
+    - name: Install toolchain
       run: |
         sudo apt update
-        sudo apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+        sudo apt install -y \
+          gcc-aarch64-linux-gnu \
+          g++-aarch64-linux-gnu \
+          musl-tools
 
     - name: Build C server
       run: |
@@ -21,23 +24,27 @@ jobs:
         aarch64-linux-gnu-gcc -O3 -march=armv8-a+simd \
           -static -o bin/ai-server src/server/main.c -lpthread
 
-    - name: Install Rust ARM64 target
+    - name: Install Rust ARM64 musl target
       uses: dtolnay/rust-toolchain@stable
       with:
-        targets: aarch64-unknown-linux-gnu
+        targets: aarch64-unknown-linux-musl
 
     - name: Configure Rust linker
       run: |
         mkdir -p ~/.cargo
         cat >> ~/.cargo/config.toml << 'TOML'
-        [target.aarch64-unknown-linux-gnu]
+        [target.aarch64-unknown-linux-musl]
         linker = "aarch64-linux-gnu-gcc"
+        rustflags = ["-C", "target-feature=+crt-static"]
         TOML
 
-    - name: Build Rust search
+    - name: Build Rust search static
       run: |
-        cargo build --release --target aarch64-unknown-linux-gnu
-        cp target/aarch64-unknown-linux-gnu/release/search bin/search
+        cargo build --release --target aarch64-unknown-linux-musl
+        cp target/aarch64-unknown-linux-musl/release/search bin/search
+
+    - name: Verify static binary
+      run: file bin/ai-server bin/search
 
     - name: Upload binaries
       uses: actions/upload-artifact@v4
