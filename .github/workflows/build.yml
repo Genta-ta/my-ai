@@ -10,6 +10,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Cache apt packages
+      uses: actions/cache@v4
+      with:
+        path: /var/cache/apt/archives
+        key: apt-${{ runner.os }}-arm64-toolchain
+        restore-keys: apt-${{ runner.os }}-
+
     - name: Install toolchain
       run: |
         sudo apt update
@@ -18,16 +25,22 @@ jobs:
           g++-aarch64-linux-gnu \
           musl-tools
 
-    - name: Build C server
-      run: |
-        mkdir -p bin
-        aarch64-linux-gnu-gcc -O3 -march=armv8-a+simd \
-          -static -o bin/ai-server src/server/main.c -lpthread
-
     - name: Install Rust ARM64 musl target
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: aarch64-unknown-linux-musl
+
+    - name: Cache Rust registry & build
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target/
+        key: rust-${{ runner.os }}-${{ hashFiles('Cargo.toml') }}-${{ hashFiles('src/search/main.rs') }}
+        restore-keys: |
+          rust-${{ runner.os }}-${{ hashFiles('Cargo.toml') }}-
+          rust-${{ runner.os }}-
 
     - name: Configure Rust linker
       run: |
@@ -38,12 +51,18 @@ jobs:
         rustflags = ["-C", "target-feature=+crt-static"]
         TOML
 
-    - name: Build Rust search static
+    - name: Build C server
+      run: |
+        mkdir -p bin
+        aarch64-linux-gnu-gcc -O3 -march=armv8-a+simd \
+          -static -o bin/ai-server src/server/main.c -lpthread
+
+    - name: Build Rust search
       run: |
         cargo build --release --target aarch64-unknown-linux-musl
         cp target/aarch64-unknown-linux-musl/release/search bin/search
 
-    - name: Verify static binary
+    - name: Verify
       run: file bin/ai-server bin/search
 
     - name: Upload binaries
