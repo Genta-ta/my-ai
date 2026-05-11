@@ -1,4 +1,4 @@
-name: Build ARM64
+name: Build All Arch
 
 on:
   push:
@@ -7,60 +7,78 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: aarch64    # ARM64 (Raspberry Pi 4, Orange Pi, dll)
+            cc: aarch64-linux-gnu-gcc
+            rust_target: aarch64-unknown-linux-musl
+            pkg: gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+          - arch: armv7      # ARM32 (Raspberry Pi 2/3 lama)
+            cc: arm-linux-gnueabihf-gcc
+            rust_target: armv7-unknown-linux-musleabihf
+            pkg: gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+
+          - arch: x86_64     # PC/Server/Cloud Shell
+            cc: gcc
+            rust_target: x86_64-unknown-linux-musl
+            pkg: musl-tools
+
+          - arch: riscv64    # RISC-V board
+            cc: riscv64-linux-gnu-gcc
+            rust_target: riscv64gc-unknown-linux-gnu
+            pkg: gcc-riscv64-linux-gnu g++-riscv64-linux-gnu
+
     steps:
     - uses: actions/checkout@v4
 
-    - name: Cache apt packages
+    - name: Cache apt
       uses: actions/cache@v4
       with:
         path: /var/cache/apt/archives
-        key: apt-${{ runner.os }}-arm64-toolchain
-        restore-keys: apt-${{ runner.os }}-
+        key: apt-${{ matrix.arch }}
 
     - name: Install toolchain
       run: |
-        sudo apt update
-        sudo apt install -y \
-          gcc-aarch64-linux-gnu \
-          g++-aarch64-linux-gnu \
-          musl-tools
+        sudo apt update -qq
+        sudo apt install -y ${{ matrix.pkg }} musl-tools
 
-    - name: Install Rust ARM64 musl target
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: aarch64-unknown-linux-musl
-
-    - name: Cache Rust registry & build
+    - name: Cache Rust
       uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
           target/
-        key: rust-${{ runner.os }}-${{ hashFiles('Cargo.toml') }}-${{ hashFiles('src/search/main.rs') }}
-        restore-keys: |
-          rust-${{ runner.os }}-${{ hashFiles('Cargo.toml') }}-
-          rust-${{ runner.os }}-
+        key: rust-${{ matrix.arch }}-${{ hashFiles('Cargo.toml','src/search/main.rs') }}
+        restore-keys: rust-${{ matrix.arch }}-
+
+    - name: Install Rust target
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.rust_target }}
 
     - name: Configure Rust linker
       run: |
         mkdir -p ~/.cargo
-        cat >> ~/.cargo/config.toml << 'TOML'
-        [target.aarch64-unknown-linux-musl]
-        linker = "aarch64-linux-gnu-gcc"
+        cat >> ~/.cargo/config.toml << TOML
+        [target.${{ matrix.rust_target }}]
+        linker = "${{ matrix.cc }}"
         rustflags = ["-C", "target-feature=+crt-static"]
         TOML
 
     - name: Build C server
       run: |
         mkdir -p bin
-        aarch64-linux-gnu-gcc -O3 -march=armv8-a+simd \
-          -static -o bin/ai-server src/server/main.c -lpthread
+        ${{ matrix.cc }} -O3 -static \
+          -o bin/ai-server src/server/main.c \
+          -lpthread
 
     - name: Build Rust search
       run: |
-        cargo build --release --target aarch64-unknown-linux-musl
-        cp target/aarch64-unknown-linux-musl/release/search bin/search
+        cargo build --release --target ${{ matrix.rust_target }}
+        cp target/${{ matrix.rust_target }}/release/search bin/search
 
     - name: Verify
       run: file bin/ai-server bin/search
@@ -68,6 +86,38 @@ jobs:
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
-        name: ai-arm64-binaries
+        name: ai-${{ matrix.arch }}-binaries
         path: bin/
         retention-days: 7
+
+  # Buat release dengan semua binary sekaligus
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download semua artifact
+      uses: actions/download-artifact@v4
+      with:
+        path: release/
+
+    - name: Rename binary per arch
+      run: |
+        for arch in aarch64 armv7 x86_64 riscv64; do
+          if [ -d "release/ai-${arch}-binaries" ]; then
+            mv release/ai-${arch}-binaries/ai-server \
+               release/ai-server-${arch}
+            mv release/ai-${arch}-binaries/search \
+               release/search-${arch}
+          fi
+        done
+        ls -lh release/
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          release/ai-server-*
+          release/search-*

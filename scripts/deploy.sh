@@ -122,15 +122,25 @@ install_gh() {
 }
 install_gh
 
-# Download binary
+# Download binary sesuai arsitektur
 rm -f $DEST/ai-server $DEST/search
-echo "[2] Download binary dari GitHub..."
+echo "[2] Download binary untuk $ARCH..."
 mkdir -p $DEST
+
+# Map arch ke nama artifact
+case $ARCH in
+  arm64) ARTIFACT="ai-aarch64-binaries" ;;
+  arm32) ARTIFACT="ai-armv7-binaries"   ;;
+  x64)   ARTIFACT="ai-x86_64-binaries"  ;;
+  riscv) ARTIFACT="ai-riscv64-binaries" ;;
+  *)     echo "ERROR: Arch $ARCH tidak didukung"; exit 1 ;;
+esac
+
 RUN_ID=$(gh run list --repo $REPO --limit 1 \
   --json databaseId -q '.[0].databaseId')
 gh run download $RUN_ID \
   --repo $REPO \
-  --name ai-arm64-binaries \
+  --name $ARTIFACT \
   --dir $DEST
 chmod +x $DEST/ai-server $DEST/search
 
