@@ -16,11 +16,7 @@ jobs:
             pkg: gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
             llama_file: llama-b9101-bin-ubuntu-arm64.tar.gz
 
-          - arch: armv7
-            cc: arm-linux-gnueabihf-gcc
-            rust_target: armv7-unknown-linux-musleabihf
-            pkg: gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
-            llama_file: llama-b9101-bin-ubuntu-armhf.tar.gz
+      
 
           - arch: x86_64
             cc: gcc
