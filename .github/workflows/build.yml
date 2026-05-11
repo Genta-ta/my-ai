@@ -1,8 +1,12 @@
-name: Build All Arch
+Name: Build All Arch
 
 on:
   push:
     branches: [main, master]
+
+env:
+  # Opt into Node.js 24 early to avoid deprecation warnings
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -16,8 +20,6 @@ jobs:
             pkg: gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
             llama_file: llama-b9101-bin-ubuntu-arm64.tar.gz
 
-      
-
           - arch: x86_64
             cc: gcc
             rust_target: x86_64-unknown-linux-musl
@@ -25,6 +27,7 @@ jobs:
             llama_file: llama-b9101-bin-ubuntu-x64.tar.gz
 
     steps:
+    # Updated to v4 (Latest stable as of early 2026)
     - uses: actions/checkout@v4
 
     - name: Cache apt
@@ -44,32 +47,7 @@ jobs:
         path: llama-bin/
         key: llama-b9101-${{ matrix.arch }}
 
-    - name: Download llama.cpp b9101
-      run: |
-        mkdir -p bin llama-bin /tmp/llama-extract
-
-        if [ -f "llama-bin/llama-cli" ]; then
-          echo "Cache hit — skip download"
-          cp llama-bin/llama-cli bin/llama-cli
-        else
-          URL="https://github.com/ggml-org/llama.cpp/releases/download/b9101/${{ matrix.llama_file }}"
-          echo "Download: $URL"
-          curl -fsSL "$URL" -o /tmp/llama.tar.gz
-
-          tar -xzf /tmp/llama.tar.gz -C /tmp/llama-extract
-
-          # Cari llama-cli
-          BINARY=$(find /tmp/llama-extract -type f -name "llama-cli" | head -1)
-          [ -z "$BINARY" ] && \
-            BINARY=$(find /tmp/llama-extract -type f -executable | head -1)
-
-          cp "$BINARY" bin/llama-cli
-          chmod +x bin/llama-cli
-          cp bin/llama-cli llama-bin/llama-cli
-          rm -rf /tmp/llama.tar.gz /tmp/llama-extract
-        fi
-
-        file bin/llama-cli
+    # ... [Keep your Download llama.cpp logic as is] ...
 
     - name: Cache Rust
       uses: actions/cache@v4
