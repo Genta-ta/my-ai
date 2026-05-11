@@ -10,25 +10,33 @@ jobs:
     strategy:
       matrix:
         include:
-          - arch: aarch64    # ARM64 (Raspberry Pi 4, Orange Pi, dll)
+          - arch: aarch64
             cc: aarch64-linux-gnu-gcc
+            cxx: aarch64-linux-gnu-g++
             rust_target: aarch64-unknown-linux-musl
             pkg: gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+            cmake_arch: aarch64
 
-          - arch: armv7      # ARM32 (Raspberry Pi 2/3 lama)
+          - arch: armv7
             cc: arm-linux-gnueabihf-gcc
+            cxx: arm-linux-gnueabihf-g++
             rust_target: armv7-unknown-linux-musleabihf
             pkg: gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+            cmake_arch: armv7
 
-          - arch: x86_64     # PC/Server/Cloud Shell
+          - arch: x86_64
             cc: gcc
+            cxx: g++
             rust_target: x86_64-unknown-linux-musl
             pkg: musl-tools
+            cmake_arch: x86_64
 
-          - arch: riscv64    # RISC-V board
+          - arch: riscv64
             cc: riscv64-linux-gnu-gcc
+            cxx: riscv64-linux-gnu-g++
             rust_target: riscv64gc-unknown-linux-gnu
             pkg: gcc-riscv64-linux-gnu g++-riscv64-linux-gnu
+            cmake_arch: riscv64
 
     steps:
     - uses: actions/checkout@v4
@@ -42,7 +50,35 @@ jobs:
     - name: Install toolchain
       run: |
         sudo apt update -qq
-        sudo apt install -y ${{ matrix.pkg }} musl-tools
+        sudo apt install -y \
+          ${{ matrix.pkg }} \
+          musl-tools cmake ninja-build
+
+    - name: Cache llama.cpp build
+      uses: actions/cache@v4
+      with:
+        path: llama.cpp/build
+        key: llama-${{ matrix.arch }}-${{ hashFiles('llama.cpp/**') }}
+        restore-keys: llama-${{ matrix.arch }}-
+
+    - name: Clone llama.cpp
+      run: |
+        [ -d llama.cpp ] || \
+          git clone --depth=1 https://github.com/ggerganov/llama.cpp
+
+    - name: Build llama.cpp
+      run: |
+        cd llama.cpp
+        cmake -B build \
+          -DCMAKE_C_COMPILER=${{ matrix.cc }} \
+          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DLLAMA_NATIVE=OFF \
+          -DBUILD_SHARED_LIBS=OFF \
+          -DLLAMA_BUILD_TESTS=OFF \
+          -DLLAMA_BUILD_EXAMPLES=ON
+        cmake --build build --config Release \
+          --target llama-cli -j$(nproc)
 
     - name: Cache Rust
       uses: actions/cache@v4
@@ -80,8 +116,11 @@ jobs:
         cargo build --release --target ${{ matrix.rust_target }}
         cp target/${{ matrix.rust_target }}/release/search bin/search
 
-    - name: Verify
-      run: file bin/ai-server bin/search
+    - name: Collect binaries
+      run: |
+        cp llama.cpp/build/bin/llama-cli bin/llama-cli
+        ls -lh bin/
+        file bin/*
 
     - name: Upload binaries
       uses: actions/upload-artifact@v4
@@ -90,34 +129,28 @@ jobs:
         path: bin/
         retention-days: 7
 
-  # Buat release dengan semua binary sekaligus
   release:
     needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Download semua artifact
-      uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v4
       with:
         path: release/
 
-    - name: Rename binary per arch
+    - name: Rename per arch
       run: |
         for arch in aarch64 armv7 x86_64 riscv64; do
-          if [ -d "release/ai-${arch}-binaries" ]; then
-            mv release/ai-${arch}-binaries/ai-server \
-               release/ai-server-${arch}
-            mv release/ai-${arch}-binaries/search \
-               release/search-${arch}
-          fi
+          dir="release/ai-${arch}-binaries"
+          [ -d "$dir" ] || continue
+          for bin in ai-server search llama-cli; do
+            [ -f "$dir/$bin" ] && \
+              mv "$dir/$bin" "release/${bin}-${arch}"
+          done
         done
         ls -lh release/
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        files: |
-          release/ai-server-*
-          release/search-*
+        files: release/*-*
