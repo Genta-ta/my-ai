@@ -14,19 +14,19 @@ jobs:
             cc: aarch64-linux-gnu-gcc
             rust_target: aarch64-unknown-linux-musl
             pkg: gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-            llama_file: llama-b9101-bin-ubuntu-arm64.zip
+            llama_file: llama-b9101-bin-ubuntu-arm64.tar.gz
 
           - arch: armv7
             cc: arm-linux-gnueabihf-gcc
             rust_target: armv7-unknown-linux-musleabihf
             pkg: gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
-            llama_file: llama-b9101-bin-ubuntu-armhf.zip
+            llama_file: llama-b9101-bin-ubuntu-armhf.tar.gz
 
           - arch: x86_64
             cc: gcc
             rust_target: x86_64-unknown-linux-musl
             pkg: musl-tools
-            llama_file: llama-b9101-bin-ubuntu-x64.zip
+            llama_file: llama-b9101-bin-ubuntu-x64.tar.gz
 
     steps:
     - uses: actions/checkout@v4
@@ -40,7 +40,7 @@ jobs:
     - name: Install toolchain
       run: |
         sudo apt update -qq
-        sudo apt install -y ${{ matrix.pkg }} musl-tools unzip
+        sudo apt install -y ${{ matrix.pkg }} musl-tools
 
     - name: Cache llama binary
       uses: actions/cache@v4
@@ -50,7 +50,7 @@ jobs:
 
     - name: Download llama.cpp b9101
       run: |
-        mkdir -p bin llama-bin
+        mkdir -p bin llama-bin /tmp/llama-extract
 
         if [ -f "llama-bin/llama-cli" ]; then
           echo "Cache hit — skip download"
@@ -58,15 +58,19 @@ jobs:
         else
           URL="https://github.com/ggml-org/llama.cpp/releases/download/b9101/${{ matrix.llama_file }}"
           echo "Download: $URL"
-          curl -fsSL "$URL" -o llama.zip
+          curl -fsSL "$URL" -o /tmp/llama.tar.gz
 
-          # Extract
-          unzip -jo llama.zip "*/llama-cli" -d bin/ 2>/dev/null || \
-          unzip -jo llama.zip "*/main"      -d bin/ 2>/dev/null && \
-            mv bin/main bin/llama-cli 2>/dev/null || true
+          tar -xzf /tmp/llama.tar.gz -C /tmp/llama-extract
 
+          # Cari llama-cli
+          BINARY=$(find /tmp/llama-extract -type f -name "llama-cli" | head -1)
+          [ -z "$BINARY" ] && \
+            BINARY=$(find /tmp/llama-extract -type f -executable | head -1)
+
+          cp "$BINARY" bin/llama-cli
           chmod +x bin/llama-cli
           cp bin/llama-cli llama-bin/llama-cli
+          rm -rf /tmp/llama.tar.gz /tmp/llama-extract
         fi
 
         file bin/llama-cli
